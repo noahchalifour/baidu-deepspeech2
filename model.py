@@ -1,12 +1,23 @@
+import utils
+
 from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
 
 
+class ModelModes:
+
+    TRAIN = 0
+    EVAL = 1
+    INFER = 2
+    STREAMING_INFER = 3
+
+
 class Model(object):
 
-    def __init__(self, config):
+    def __init__(self, config, mode):
 
         self.config = config
+        self.mode = mode
 
         self.inputs = tf.placeholder(tf.float32,
                                      shape=[None, None, self.config.n_features],
@@ -17,14 +28,16 @@ class Model(object):
         self.labels = tf.sparse_placeholder(tf.int32,
                                             name='labels')
 
+        batch_size = self.config.batch_size
+        if mode == ModelModes.INFER or mode == ModelModes.STREAMING_INFER:
+            batch_size = 1
+
         self.conv_weights = {}
         self.conv_biases = {}
 
         # TODO: Add batch normalization to RNN
 
         def rnn_cell():
-
-            # TODO: Add bidirectional
 
             if self.config.rnn_type == 'lstm':
                 return BasicLSTMCell(self.config.rnn_size)
@@ -34,51 +47,124 @@ class Model(object):
                 raise Exception(f'Invalid rnn type: {self.config.rnn_type} (Must be lstm or gru)')
 
         if self.config.rnn_layers == 1:
-            self.rnn_cell = rnn_cell()
+            self.fw_rnn_cell = rnn_cell()
+            if self.config.bidirectional_rnn:
+                self.bw_rnn_cell = rnn_cell()
         else:
-            self.rnn_cell = MultiRNNCell([rnn_cell() for _ in range(self.config.rnn_layers)])
+            self.fw_rnn_cell = MultiRNNCell([rnn_cell() for _ in range(self.config.rnn_layers)])
+            if self.config.bidirectional_rnn:
+                self.bw_rnn_cell = MultiRNNCell([rnn_cell() for _ in range(self.config.rnn_layers)])
 
-        conv_output = tf.reshape(self.inputs, [self.config.batch_size, self.config.input_max_len, self.config.n_features, 1])
+        self.fw_rnn_state = self.fw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
+        if self.config.bidirectional_rnn:
+            self.bw_rnn_state = self.bw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
+
+        conv_output = tf.reshape(self.inputs, [batch_size, self.config.input_max_len, self.config.n_features, 1])
 
         layer_output = 1
         for i in range(self.config.num_conv_layers):
 
-            self.conv_weights[f'W_conv{i+1}'] = tf.Variable(tf.random_normal([5, 5, layer_output, 32*(i+1)]))
-            self.conv_biases[f'b_conv{i+1}'] = tf.Variable(tf.random_normal([32*(i+1)]))
+            self.conv_weights[f'W_conv{i+1}'] = tf.Variable(tf.random_normal([5, 5, layer_output, 32*(i+1)]), name=f'W_conv{i+1}')
+            self.conv_biases[f'b_conv{i+1}'] = tf.Variable(tf.random_normal([32*(i+1)]), name=f'b_conv{i+1}')
             layer_output = 32 * (i + 1)
 
             conv_output = tf.nn.conv2d(conv_output, self.conv_weights[f'W_conv{i+1}'], strides=[1, 1, 1, 1], padding='SAME')
             conv_output = tf.layers.batch_normalization(conv_output)
 
-        conv_output = tf.reshape(conv_output, [self.config.batch_size, self.config.input_max_len, -1])
+        conv_output = tf.reshape(conv_output, [batch_size, self.config.input_max_len, -1])
 
-        rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, conv_output, self.input_lens, dtype=tf.float32)
+        if self.config.bidirectional_rnn:
+            rnn_outputs, state = tf.nn.bidirectional_dynamic_rnn(self.fw_rnn_cell, self.bw_rnn_cell, conv_output,
+                                                                 self.input_lens, initial_state_fw=self.fw_rnn_state,
+                                                                 initial_state_bw=self.bw_rnn_state, dtype=tf.float32)
+        else:
+            rnn_outputs, state = tf.nn.dynamic_rnn(self.fw_rnn_cell, conv_output,
+                                                   self.input_lens, initial_state=self.fw_rnn_state, dtype=tf.float32)
+
+        if mode == ModelModes.STREAMING_INFER:
+            if self.config.bidirectional_rnn:
+                self.fw_rnn_state = state[0]
+                self.bw_rnn_state = state[1]
+            else:
+                self.fw_rnn_state = state
+
         rnn_outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
 
-        # TODO: Implement Row Convolution
+        if self.config.bidirectional_rnn:
+            # TODO: Implement Row Convolution
+            pass
         
-        # fc_W = tf.Variable(tf.truncated_normal([self.config.rnn_size, self.config.n_classes], stddev=0.1))
-        # fc_b = tf.Variable(tf.constant(0., shape=[self.config.n_classes]))
-        #
-        # logits = tf.matmul(rnn_outputs, fc_W) + fc_b
+        fc_W = tf.Variable(tf.truncated_normal([self.config.rnn_size, self.config.n_classes], stddev=0.1), name='W_fc')
+        fc_b = tf.Variable(tf.constant(0., shape=[self.config.n_classes]), name='b_fc')
 
-        logits = tf.contrib.layers.fully_connected(rnn_outputs, self.config.n_classes)
-        logits = tf.reshape(logits, [self.config.batch_size, -1, self.config.n_classes])
+        logits = tf.matmul(rnn_outputs, fc_W) + fc_b
+
+        # logits = tf.contrib.layers.fully_connected(rnn_outputs, self.config.n_classes)
+
+        logits = tf.reshape(logits, [batch_size, -1, self.config.n_classes])
         logits = tf.transpose(logits, (1, 0, 2))
 
-        loss = tf.nn.ctc_loss(self.labels, logits, self.input_lens)
-        self.cost = tf.reduce_mean(loss)
+        if mode == ModelModes.TRAIN:
 
-        self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.config.learning_rate).minimize(self.cost)
+            loss = tf.nn.ctc_loss(self.labels, logits, self.input_lens)
+            self.cost = tf.reduce_mean(loss)
 
-        # TODO: Choose decoder
+            if self.config.optimizer == 'sgd':
+                self.optimizer = tf.train.GradientDescentOptimizer(
+                    learning_rate=self.config.learning_rate).minimize(self.cost)
+            elif self.config.optimizer == 'adam':
+                self.optimizer = tf.train.AdamOptimizer(
+                    learning_rate=self.config.learning_rate).minimize(self.cost)
+            else:
+                raise Exception(f'Invalid optimizer: {self.config.optimizer}')
 
-        self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, self.input_lens)
+        else:
 
-    def train(self, inputs, input_len, targets, sess):
+            if self.config.beam_width > 0:
+                self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, self.input_lens, beam_width=self.config.beam_width)
+            else:
+                self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, self.input_lens)
+
+        self.saver = tf.train.Saver()
+
+    def train(self, inputs, targets, sess):
+
+        assert self.mode == ModelModes.TRAIN
 
         return sess.run([self.cost, self.optimizer], feed_dict={
             self.inputs: inputs,
-            self.input_lens: input_len,
+            self.input_lens: [len(x) for x in inputs],
             self.labels: targets
+        })
+
+    def eval(self, inputs, targets, sess):
+
+        assert self.mode == ModelModes.EVAL
+
+        wer = 0.0
+
+        decoded = sess.run([self.decoded], feed_dict={
+            self.inputs: inputs,
+            self.input_lens: [len(x) for x in inputs],
+        })[0][0]
+
+        print(decoded)
+
+        decoded = decoded.values.reshape(decoded.dense_shape)
+        targets = targets.values.reshape(targets.dense_shape)
+
+        for i in range(len(decoded)):
+            print(decoded[i])
+            print(targets[i])
+            wer += utils.wer(targets[i], decoded[i])
+
+        return wer / len(targets)
+
+    def infer(self, input_seq, sess):
+
+        assert self.mode == ModelModes.INFER or self.mode == ModelModes.STREAMING_INFER
+
+        return sess.run([self.decoded], feed_dict={
+            self.inputs: [input_seq],
+            self.input_lens: [len(input_seq[0])]
         })
