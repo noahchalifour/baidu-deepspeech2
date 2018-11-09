@@ -40,6 +40,9 @@ def preprocess_librispeech(master_directory):
 
     output_space = {'<null>': 0}
 
+    if not os.path.exists('data'):
+        os.makedirs('data')
+
     with open('data/transcriptions.txt', 'w') as transcriptions_f:
 
         for root, dirs, files in os.walk(master_directory):
