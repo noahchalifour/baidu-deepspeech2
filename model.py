@@ -22,11 +22,10 @@ class Model(object):
         self.inputs = tf.placeholder(tf.float32,
                                      shape=[None, None, self.config.n_features],
                                      name='inputs')
-        self.input_lens = tf.placeholder(tf.int32,
-                                         shape=[None],
-                                         name='input_lens')
         self.labels = tf.sparse_placeholder(tf.int32,
                                             name='labels')
+
+        sequence_lengths = utils.compute_seq_lengths(self.inputs)
 
         batch_size = self.config.batch_size
         if mode == ModelModes.INFER or mode == ModelModes.STREAMING_INFER:
@@ -75,11 +74,11 @@ class Model(object):
 
         if self.config.bidirectional_rnn:
             rnn_outputs, state = tf.nn.bidirectional_dynamic_rnn(self.fw_rnn_cell, self.bw_rnn_cell, conv_output,
-                                                                 self.input_lens, initial_state_fw=self.fw_rnn_state,
+                                                                 sequence_lengths, initial_state_fw=self.fw_rnn_state,
                                                                  initial_state_bw=self.bw_rnn_state, dtype=tf.float32)
         else:
             rnn_outputs, state = tf.nn.dynamic_rnn(self.fw_rnn_cell, conv_output,
-                                                   self.input_lens, initial_state=self.fw_rnn_state, dtype=tf.float32)
+                                                   sequence_lengths, initial_state=self.fw_rnn_state, dtype=tf.float32)
 
         if mode == ModelModes.STREAMING_INFER:
             if self.config.bidirectional_rnn:
@@ -106,7 +105,7 @@ class Model(object):
 
         if mode == ModelModes.TRAIN:
 
-            loss = tf.nn.ctc_loss(self.labels, logits, self.input_lens)
+            loss = tf.nn.ctc_loss(self.labels, logits, sequence_lengths)
             self.cost = tf.reduce_mean(loss)
 
             if self.config.optimizer == 'sgd':
@@ -121,9 +120,9 @@ class Model(object):
         else:
 
             if self.config.beam_width > 0:
-                self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, self.input_lens, beam_width=self.config.beam_width)
+                self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, sequence_lengths, beam_width=self.config.beam_width)
             else:
-                self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, self.input_lens)
+                self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
 
         self.saver = tf.train.Saver()
 
@@ -133,7 +132,6 @@ class Model(object):
 
         return sess.run([self.cost, self.optimizer], feed_dict={
             self.inputs: inputs,
-            self.input_lens: [len(x) for x in inputs],
             self.labels: targets
         })
 
@@ -145,7 +143,6 @@ class Model(object):
 
         decoded = sess.run([self.decoded], feed_dict={
             self.inputs: inputs,
-            self.input_lens: [len(x) for x in inputs],
         })[0][0]
 
         print(decoded)
@@ -166,5 +163,4 @@ class Model(object):
 
         return sess.run([self.decoded], feed_dict={
             self.inputs: [input_seq],
-            self.input_lens: [len(input_seq[0])]
         })

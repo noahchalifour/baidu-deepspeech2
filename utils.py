@@ -1,11 +1,20 @@
 import os
 import random
 import numpy as np
+import tensorflow as tf
 
 
 def words_to_text(words):
 
     return ''.join(words)
+
+
+def compute_seq_lengths(seq):
+
+    used = tf.sign(tf.reduce_max(tf.abs(seq), reduction_indices=2))
+    length = tf.reduce_sum(used, reduction_indices=1)
+    length = tf.cast(length, tf.int32)
+    return length
 
 
 def ids_to_text(ids, mapping):
