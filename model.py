@@ -2,6 +2,7 @@ import utils
 
 from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
+import tensorflow.sparse
 
 
 class ModelModes:
@@ -87,7 +88,7 @@ class Model(object):
             else:
                 self.fw_rnn_state = state
 
-        rnn_outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
+        outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
 
         if self.config.bidirectional_rnn:
             # TODO: Implement Row Convolution
@@ -96,7 +97,7 @@ class Model(object):
         fc_W = tf.Variable(tf.truncated_normal([self.config.rnn_size, self.config.n_classes], stddev=0.1), name='W_fc')
         fc_b = tf.Variable(tf.constant(0., shape=[self.config.n_classes]), name='b_fc')
 
-        logits = tf.matmul(rnn_outputs, fc_W) + fc_b
+        logits = tf.matmul(outputs, fc_W) + fc_b
 
         # logits = tf.contrib.layers.fully_connected(rnn_outputs, self.config.n_classes)
 
@@ -124,6 +125,8 @@ class Model(object):
             else:
                 self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
 
+            self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
+
         self.saver = tf.train.Saver()
 
     def train(self, inputs, targets, sess):
@@ -139,23 +142,10 @@ class Model(object):
 
         assert self.mode == ModelModes.EVAL
 
-        wer = 0.0
-
-        decoded = sess.run([self.decoded], feed_dict={
+        return sess.run([self.ler], feed_dict={
             self.inputs: inputs,
-        })[0][0]
-
-        print(decoded)
-
-        decoded = decoded.values.reshape(decoded.dense_shape)
-        targets = targets.values.reshape(targets.dense_shape)
-
-        for i in range(len(decoded)):
-            print(decoded[i])
-            print(targets[i])
-            wer += utils.wer(targets[i], decoded[i])
-
-        return wer / len(targets)
+            self.labels: targets
+        })
 
     def infer(self, input_seq, sess):
 

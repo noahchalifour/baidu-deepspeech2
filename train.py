@@ -83,9 +83,9 @@ if __name__ == '__main__':
                 eval_model.saver.restore(eval_sess, checkpoint_path)
                 infer_model.saver.restore(infer_sess, checkpoint_path)
 
-                # wer = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
-                #
-                # print(f'Eval --- WER: {wer}')
+                ler = eval_model.eval(batch_train_x, batch_train_y, eval_sess)[0] * 100
+
+                print(f'Eval --- LER: {ler} %')
 
                 decoded_ids = infer_model.infer(batch_train_x[0], infer_sess)[0][0].values
 
