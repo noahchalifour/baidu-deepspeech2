@@ -10,6 +10,7 @@ hparams = HParams(
     checkpoints_path = 'model/checkpoints',
     max_data = 10,
     optimizer = 'sgd',
+    logdir = 'logs',
 
     # CNN
     num_conv_layers = 1,    # Best: 3

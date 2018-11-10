@@ -1,3 +1,4 @@
 pydub
 sklearn
 scipy
+tensorflow

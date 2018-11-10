@@ -2,12 +2,27 @@ from model import Model, ModelModes
 from config import hparams
 import utils
 
+from tensorboard import default as tb_default
+from tensorboard import program as tb_program
 import os
 import time
+import shutil
+import threading
 import tensorflow as tf
 import numpy as np
 
 if __name__ == '__main__':
+
+    if os.path.exists(hparams.logdir):
+        shutil.rmtree(hparams.logdir)
+
+    os.makedirs(hparams.logdir)
+
+    tb = tb_program.TensorBoard(tb_default.get_plugins(), tb_default.get_assets_zip_provider())
+    tb.configure(argv=[None, '--logdir', hparams.logdir])
+    tb_thread = threading.Thread(target=tb.main)
+    tb_thread.daemon = True
+    tb_thread.start()
 
     train_graph = tf.Graph()
     eval_graph = tf.Graph()
@@ -40,6 +55,12 @@ if __name__ == '__main__':
 
         infer_model = Model(hparams, ModelModes.INFER)
 
+    writer = tf.summary.FileWriter(hparams.logdir)
+
+    # TODO: Fix adding graphs to tensorboard
+    # writer.add_graph(train_graph)
+    # writer.add_graph(eval_graph)
+
     train_sess = tf.Session(graph=train_graph)
     eval_sess = tf.Session(graph=eval_graph)
     infer_sess = tf.Session(graph=infer_graph)
@@ -69,9 +90,11 @@ if __name__ == '__main__':
             batch_train_x = np.asarray(x_train[i*batch_size:(i+1)*batch_size], dtype=np.float32)
             batch_train_y = utils.sparse_tuple_from(np.asarray(y_train[i * batch_size:(i + 1) * batch_size]))
 
-            cost, _ = train_model.train(batch_train_x, batch_train_y, train_sess)
+            cost, _, summary = train_model.train(batch_train_x, batch_train_y, train_sess)
 
             global_step += batch_size
+
+            writer.add_summary(summary, global_step=global_step)
 
             print(f'epoch: {current_epoch}, global_step: {global_step}, cost: {cost}, time: {time.time() - start_time}')
 
@@ -83,9 +106,11 @@ if __name__ == '__main__':
                 eval_model.saver.restore(eval_sess, checkpoint_path)
                 infer_model.saver.restore(infer_sess, checkpoint_path)
 
-                ler = eval_model.eval(batch_train_x, batch_train_y, eval_sess)[0] * 100
+                ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
 
-                print(f'Eval --- LER: {ler} %')
+                writer.add_summary(summary, global_step=global_step)
+
+                print(f'Eval --- LER: {ler*100} %')
 
                 decoded_ids = infer_model.infer(batch_train_x[0], infer_sess)[0][0].values
 
