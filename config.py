@@ -3,7 +3,6 @@ from tensorflow.contrib.training import HParams
 hparams = HParams(
 
     batch_size = 2,
-    n_features = 161,
     learning_rate = 0.001,
     n_epochs = 30,
     steps_per_checkpoint = 10,

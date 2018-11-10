@@ -37,8 +37,10 @@ if __name__ == '__main__':
 
     hparams.input_max_len = max([max([len(x) for x in x_train]), max([len(x) for x in x_test])])
 
-    x_train = utils.pad_sequences(x_train, hparams.input_max_len)
-    x_test = utils.pad_sequences(x_test, hparams.input_max_len)
+    x_train = np.asarray(utils.pad_sequences(x_train, hparams.input_max_len))
+    x_test = np.asarray(utils.pad_sequences(x_test, hparams.input_max_len))
+
+    hparams.n_features = x_train.shape[2]
 
     print('Initializing model...')
 
