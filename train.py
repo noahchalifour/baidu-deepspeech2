@@ -55,11 +55,8 @@ if __name__ == '__main__':
 
         infer_model = Model(hparams, ModelModes.INFER)
 
-    writer = tf.summary.FileWriter(hparams.logdir)
-
-    # TODO: Fix adding graphs to tensorboard
-    # writer.add_graph(train_graph)
-    # writer.add_graph(eval_graph)
+    train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=train_graph)
+    eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=eval_graph)
 
     train_sess = tf.Session(graph=train_graph)
     eval_sess = tf.Session(graph=eval_graph)
@@ -94,7 +91,7 @@ if __name__ == '__main__':
 
             global_step += batch_size
 
-            writer.add_summary(summary, global_step=global_step)
+            train_writer.add_summary(summary, global_step=global_step)
 
             print(f'epoch: {current_epoch}, global_step: {global_step}, cost: {cost}, time: {time.time() - start_time}')
 
@@ -108,7 +105,7 @@ if __name__ == '__main__':
 
                 ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
 
-                writer.add_summary(summary, global_step=global_step)
+                eval_writer.add_summary(summary, global_step=global_step)
 
                 print(f'Eval --- LER: {ler*100} %')
 

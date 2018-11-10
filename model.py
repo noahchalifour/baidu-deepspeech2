@@ -2,6 +2,7 @@ import utils
 
 from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
+tf.reset_default_graph()
 
 
 class ModelModes:
@@ -107,7 +108,9 @@ class Model(object):
 
             loss = tf.nn.ctc_loss(self.labels, logits, sequence_lengths)
             self.cost = tf.reduce_mean(loss)
-            tf.summary.scalar('cost', self.cost)
+
+            cost_summary = tf.summary.scalar('cost', self.cost)
+            self.summary = tf.summary.merge([cost_summary])
 
             if self.config.optimizer == 'sgd':
                 self.optimizer = tf.train.GradientDescentOptimizer(
@@ -125,17 +128,18 @@ class Model(object):
             else:
                 self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
 
-            self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
-            tf.summary.scalar('label error rate', self.ler)
+            if self.mode == ModelModes.EVAL:
+                self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
+                ler_summary = tf.summary.scalar('label error rate', self.ler)
+                self.summary = tf.summary.merge([ler_summary])
 
         self.saver = tf.train.Saver()
-        self.merged = tf.summary.merge_all()
 
     def train(self, inputs, targets, sess):
 
         assert self.mode == ModelModes.TRAIN
 
-        return sess.run([self.cost, self.optimizer, self.merged], feed_dict={
+        return sess.run([self.cost, self.optimizer, self.summary], feed_dict={
             self.inputs: inputs,
             self.labels: targets
         })
@@ -144,7 +148,7 @@ class Model(object):
 
         assert self.mode == ModelModes.EVAL
 
-        return sess.run([self.ler, self.merged], feed_dict={
+        return sess.run([self.ler, self.summary], feed_dict={
             self.inputs: inputs,
             self.labels: targets
         })
