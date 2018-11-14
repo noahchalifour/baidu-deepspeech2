@@ -109,7 +109,7 @@ def load_data(filepath, max_data, test_size=0.2):
                         if len(arr) > len(ids):
                             all_data.append((arr, ids))
                         else:
-                            print(f"error loading transcription: \"{line}\"")
+                            print("error loading transcription: \"{}\"".format(line))
                         break
 
     random.shuffle(all_data)
