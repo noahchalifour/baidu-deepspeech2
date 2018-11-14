@@ -2,6 +2,7 @@ from pydub import AudioSegment
 from scipy import signal
 from sklearn import preprocessing
 import os
+import argparse
 import numpy as np
 
 
@@ -71,4 +72,13 @@ def preprocess_librispeech(master_directory):
 
 if __name__ == '__main__':
 
-    preprocess_librispeech('librispeech_data/LibriSpeech')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--data_dir', required=True, type=str, help='The directory of your data to be preprocessed.')
+    ap.add_argument('--dataset', required=True, type=str, help='The type of dataset you are using (librispeech)')
+
+    args = ap.parse_args()
+
+    if args.dataset == 'librispeech':
+        preprocess_librispeech(args.data_dir)
+    else:
+        raise Exception(f"Invalid dataset \"{args.dataset}\" must be (librispeech)")
