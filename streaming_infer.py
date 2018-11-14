@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
             if prediction != transcription:
                 transcription = prediction
-                print(f"Transcription: {transcription}")
+                print("Transcription: {}".format(transcription))
 
     except KeyboardInterrupt:
 

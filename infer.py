@@ -27,4 +27,4 @@ if __name__ == '__main__':
     decoded = model.infer(pp_audio, infer_sess)[0][0]
     prediction = utils.ids_to_text(decoded.values, output_mapping)
 
-    print(f"Transcription: {prediction} (took {time.time() - start_time} seconds)")
+    print("Transcription: {} (took {} seconds)".format(prediction, time.time() - start_time))

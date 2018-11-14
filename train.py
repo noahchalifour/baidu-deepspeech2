@@ -98,11 +98,11 @@ if __name__ == '__main__':
 
             train_writer.add_summary(summary, global_step=global_step)
 
-            print(f'epoch: {current_epoch}, global_step: {global_step}, cost: {cost}, time: {time.time() - start_time}')
+            print('epoch: {}, global_step: {}, cost: {}, time: {}'.format(current_epoch, global_step, cost, time.time() - start_time))
 
             if global_step % steps_per_checkpoint == 0:
 
-                print(f'checkpointing... (global step = {global_step})')
+                print('checkpointing... (global step = {})'.format(global_step))
 
                 checkpoint_path = train_model.saver.save(train_sess, checkpoints_path, global_step=global_step)
                 eval_model.saver.restore(eval_sess, checkpoint_path)
@@ -112,14 +112,14 @@ if __name__ == '__main__':
 
                 eval_writer.add_summary(summary, global_step=global_step)
 
-                print(f'Eval --- LER: {ler*100} %')
+                print('Eval --- LER: {} %'.format(ler*100))
 
                 decoded_ids = infer_model.infer(batch_train_x[0], infer_sess)[0][0].values
 
                 original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
                 decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
 
-                print(f'GROUND TRUTH: {original_text}')
-                print(f'PREDICTION: {decoded_text}')
+                print('GROUND TRUTH: {}'.format(original_text))
+                print('PREDICTION: {}'.format(decoded_text))
 
         if epoch > 0: epoch -= 1

@@ -46,11 +46,11 @@ class Model(object):
 
             for i in range(self.config.num_conv_layers):
 
-                self.conv_weights[f'W_conv{i+1}'] = tf.Variable(tf.random_normal([5, 5, layer_output, 32*(i+1)]), name=f'W_conv{i+1}')
-                self.conv_biases[f'b_conv{i+1}'] = tf.Variable(tf.random_normal([32*(i+1)]), name=f'b_conv{i+1}')
+                self.conv_weights['W_conv' + str(i+1)] = tf.Variable(tf.random_normal([5, 5, layer_output, 32*(i+1)]), name=('W_conv' + str(i+1)))
+                self.conv_biases['b_conv' + str(i+1)] = tf.Variable(tf.random_normal([32*(i+1)]), name=('b_conv' + str(i+1)))
                 layer_output = 32 * (i + 1)
 
-                conv_output = tf.nn.conv2d(conv_output, self.conv_weights[f'W_conv{i+1}'], strides=[1, 1, 1, 1], padding='SAME')
+                conv_output = tf.nn.conv2d(conv_output, self.conv_weights['W_conv' + str(i+1)], strides=[1, 1, 1, 1], padding='SAME')
                 conv_output = tf.layers.batch_normalization(conv_output)
 
         conv_output = tf.reshape(conv_output, [batch_size, self.config.input_max_len, -1])
@@ -62,7 +62,7 @@ class Model(object):
             elif self.config.rnn_type == 'gru':
                 return GRUCell(self.config.rnn_size)
             else:
-                raise Exception(f'Invalid rnn type: {self.config.rnn_type} (Must be lstm or gru)')
+                raise Exception('Invalid rnn type: {} (Must be lstm or gru)'.format(self.config.rnn_type))
 
         with tf.variable_scope('RNN'):
             if self.config.rnn_layers == 1:
