@@ -31,9 +31,10 @@ if __name__ == '__main__':
 
             decoded = model.infer(pp_audio, infer_sess)[0][0]
             prediction = utils.ids_to_text(decoded.values, output_mapping)
+            tmp_transcription = transcription + prediction
 
-            if prediction != transcription:
-                transcription = prediction
+            if transcription != tmp_transcription:
+                transcription = tmp_transcription
                 print("Transcription: {}".format(transcription))
 
     except KeyboardInterrupt:

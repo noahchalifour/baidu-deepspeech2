@@ -28,9 +28,13 @@ def load_output_mapping(filename):
     mapping = []
 
     with open(filename, 'r') as f:
-        for line in f.readlines():
+        lines = f.readlines()
+
+    for line in lines:
+        for _ in range(len(lines)):
             sections = line.split(' --> ')
-            mapping.append(sections[0])
+            if int(sections[1].strip('\n')) == len(mapping):
+                mapping.append(sections[0])
 
     return mapping
 
