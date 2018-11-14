@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
                 print('Eval --- LER: {} %'.format(ler*100))
 
-                decoded_ids = infer_model.infer(batch_train_x[0], infer_sess)[0][0].values
+                decoded_ids = infer_model.infer([batch_train_x[0]], infer_sess)[0][0].values
 
                 original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
                 decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
