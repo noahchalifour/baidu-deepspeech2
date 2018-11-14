@@ -9,6 +9,7 @@ import time
 import shutil
 import threading
 import tensorflow as tf
+tf.reset_default_graph()
 import numpy as np
 
 if __name__ == '__main__':
