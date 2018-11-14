@@ -10,6 +10,7 @@ hparams = HParams(
     max_data = 10,
     optimizer = 'sgd',
     logdir = 'logs',
+    log_device_placement = True,
 
     # CNN
     num_conv_layers = 1,    # Best: 3

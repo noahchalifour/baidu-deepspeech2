@@ -60,7 +60,8 @@ if __name__ == '__main__':
     train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=train_graph)
     eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=eval_graph)
 
-    train_sess = tf.Session(graph=train_graph)
+    train_sess = tf.Session(graph=train_graph,
+                            config=tf.ConfigProto(log_device_placement=hparams.log_device_placement))
     eval_sess = tf.Session(graph=eval_graph)
     infer_sess = tf.Session(graph=infer_graph)
 
