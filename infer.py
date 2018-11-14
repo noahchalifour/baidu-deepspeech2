@@ -20,7 +20,7 @@ if __name__ == '__main__':
     output_mapping = utils.load_output_mapping('data/output_space.txt')
 
     audio_segment = AudioSegment.from_file(args.file)
-    pp_audio = preprocess.preprocess_audio(audio_segment)
+    pp_audio = preprocess.preprocess_audio(audio_segment.raw_data, audio_segment.frame_rate)
     pp_audio = utils.pad_sequences([pp_audio], model.config.input_max_len)
 
     start_time = time.time()

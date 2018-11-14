@@ -23,14 +23,14 @@ def log_linear_specgram(audio, sample_rate, window_size=10,
     return np.log(spec.T.astype(np.float32) + eps)
 
 
-def preprocess_audio(audio):
+def preprocess_audio(audio, frame_rate):
 
     # TODO: Normalize audio
     # TODO: Maybe convert data to mono?
 
-    arr_data = np.fromstring(audio.raw_data, dtype=np.int16)
+    arr_data = np.fromstring(audio, dtype=np.int16)
 
-    features = log_linear_specgram(arr_data, audio.frame_rate, window_size=20, step_size=10)
+    features = log_linear_specgram(arr_data, frame_rate, window_size=20, step_size=10)
     features = np.asarray([preprocessing.scale(spec_bin.astype(float)) for spec_bin in features])
 
     return features
@@ -50,7 +50,7 @@ def preprocess_librispeech(master_directory):
                 for file in files:
                     if file[-5:] == '.flac':
                         audio = AudioSegment.from_file(os.path.join(root, file))
-                        pp_audio = preprocess_audio(audio)
+                        pp_audio = preprocess_audio(audio.raw_data, audio.frame_rate)
                         np.save('data/' + file[:-5] + '.npy', pp_audio)
                     elif file[-4:] == '.txt':
                         with open(os.path.join(root, file), 'r') as f:
