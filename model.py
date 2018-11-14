@@ -143,7 +143,7 @@ class Model(object):
                 self.optimizer = tf.train.AdamOptimizer(
                     learning_rate=self.config.learning_rate).minimize(self.cost)
             else:
-                raise Exception(f'Invalid optimizer: {self.config.optimizer}')
+                raise Exception('Invalid optimizer: {}'.format(self.config.optimizer))
 
         else:
 
