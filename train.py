@@ -31,7 +31,6 @@ if __name__ == '__main__':
     print('Loading data...')
 
     output_mapping = utils.load_output_mapping('data/output_space.txt')
-    print(output_mapping)
     hparams.n_classes = len(output_mapping) + 1  # not entirely sure we +1 here
 
     x_train, y_train, x_test, y_test = utils.load_data('data', max_data=hparams.max_data)

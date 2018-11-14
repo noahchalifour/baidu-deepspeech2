@@ -30,8 +30,8 @@ def load_output_mapping(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
 
-    for line in lines:
-        for _ in range(len(lines)):
+    for _ in range(len(lines)):
+        for line in lines:
             sections = line.split(' --> ')
             if int(sections[1].strip('\n')) == len(mapping):
                 mapping.append(sections[0])
