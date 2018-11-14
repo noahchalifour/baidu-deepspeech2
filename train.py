@@ -78,6 +78,8 @@ if __name__ == '__main__':
 
     checkpoints_path = os.path.join(checkpoints_path, 'checkpoint')
 
+    train_model.save('model', train_sess, global_step=0)
+
     print('Training...')
 
     while epoch:

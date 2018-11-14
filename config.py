@@ -18,10 +18,10 @@ hparams = HParams(
     rnn_type = 'gru',
     rnn_layers = 3,         # Best: 7
     rnn_size = 128,
-    bidirectional_rnn = True,
+    bidirectional_rnn = False,
 
     # Row convolution
-    future_context = 2,
+    future_context = -1,
 
     # Decoder
     beam_width = 32

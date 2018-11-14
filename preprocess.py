@@ -69,6 +69,6 @@ def preprocess_librispeech(master_directory):
             f.write(k + ' --> ' + str(v) + '\n')
 
 
-if __name__ == '__main__':
-
-    preprocess_librispeech('librispeech_data/LibriSpeech')
+# if __name__ == '__main__':
+#
+#     preprocess_librispeech('librispeech_data/LibriSpeech')

@@ -1,4 +1,6 @@
 import utils
+import os
+import pickle
 
 from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
@@ -93,9 +95,26 @@ class Model(object):
 
         outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
 
-        if self.config.bidirectional_rnn:
-            # TODO: Implement Row Convolution
-            pass
+        if (not self.config.bidirectional_rnn) and self.config.future_context > 0:
+            with tf.variable_scope("Lookahead"):
+                # TODO: Make much faster (tf.map_fn)
+                self.row_conv_weights = tf.Variable(tf.random_normal([1, self.config.rnn_size, self.config.future_context+1]),
+                                                    name='W_row_conv')
+                # outputs = tf.concat([outputs, np.zeros([self.config.future_context, self.config.rnn_size])], axis=0)
+                outputs = tf.reshape(outputs, [batch_size, -1, self.config.rnn_size])
+                row_conv_output = tf.nn.conv1d(outputs, self.row_conv_weights, stride=1, padding='SAME')
+                print(row_conv_output)
+
+                # outputs = tf.map_fn(
+                #     lambda t: tf.map_fn(
+                #         lambda i: tf.reduce_sum(tf.map_fn(
+                #             lambda j: tf.multiply(self.row_conv_weights[i, j], outputs[t+j, i]),
+                #             tf.range(self.config.future_context), dtype=tf.float32
+                #         )),
+                #         tf.range(self.config.rnn_size), dtype=tf.float32
+                #     ),
+                #     tf.range(outputs.shape[0] - self.config.future_context), dtype=tf.float32
+                # )
 
         with tf.variable_scope("Fully_Connected"):
 
@@ -140,6 +159,17 @@ class Model(object):
 
         self.saver = tf.train.Saver()
 
+    @classmethod
+    def load(cls, params_filepath, checkpoint_filepath, mode, sess):
+
+        with open(params_filepath, 'rb') as f:
+            hparams = pickle.load(f)
+
+        obj = cls(hparams, mode)
+        obj.saver.restore(sess, checkpoint_filepath)
+
+        return obj
+
     def train(self, inputs, targets, sess):
 
         assert self.mode == ModelModes.TRAIN
@@ -158,10 +188,17 @@ class Model(object):
             self.labels: targets
         })
 
-    def infer(self, input_seq, sess):
+    def infer(self, inputs, sess):
 
         assert self.mode == ModelModes.INFER or self.mode == ModelModes.STREAMING_INFER
 
         return sess.run([self.decoded], feed_dict={
-            self.inputs: [input_seq],
+            self.inputs: inputs,
         })
+
+    def save(self, dir, sess, global_step=None):
+
+        with open(os.path.join(dir, 'hparams'), 'wb') as f:
+            pickle.dump(self.config, f)
+
+        self.saver.save(sess, os.path.join(dir, 'checkpoints', 'checkpoint'), global_step=global_step)
