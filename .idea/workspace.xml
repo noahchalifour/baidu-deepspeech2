@@ -22,8 +22,8 @@
       <file leaf-file-name="train.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/train.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="511">
-              <caret line="91" column="12" selection-start-line="91" selection-start-column="14" selection-end-line="111" selection-end-column="62" />
+            <state relative-caret-position="658">
+              <caret line="105" column="65" selection-start-line="105" selection-start-column="65" selection-end-line="105" selection-end-column="65" />
               <folding>
                 <element signature="e#0#35#0" expanded="true" />
               </folding>
@@ -124,6 +124,7 @@
       <find>28</find>
       <find>self.input_len</find>
       <find>self.config.bat</find>
+      <find>mode</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -414,7 +415,14 @@
       <option name="project" value="LOCAL" />
       <updated>1542236028672</updated>
     </task>
-    <option name="localTasksCounter" value="19" />
+    <task id="LOCAL-00019" summary="Memory optimization test">
+      <created>1542324629705</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1542324629705</updated>
+    </task>
+    <option name="localTasksCounter" value="20" />
     <servers />
   </component>
   <component name="ToolWindowManager">
@@ -465,7 +473,8 @@
     <MESSAGE value="Reformated model inference" />
     <MESSAGE value="Fixed output mapping" />
     <MESSAGE value="update" />
-    <option name="LAST_COMMIT_MESSAGE" value="update" />
+    <MESSAGE value="Memory optimization test" />
+    <option name="LAST_COMMIT_MESSAGE" value="Memory optimization test" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/preprocess.py">
@@ -834,13 +843,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/config.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="315">
-          <caret line="21" column="28" selection-start-line="21" selection-start-column="28" selection-end-line="21" selection-end-column="28" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/README.md">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
@@ -874,10 +876,17 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/config.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="315">
+          <caret line="21" column="28" selection-start-line="21" selection-start-column="28" selection-end-line="21" selection-end-column="28" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/train.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="511">
-          <caret line="91" column="12" selection-start-line="91" selection-start-column="14" selection-end-line="111" selection-end-column="62" />
+        <state relative-caret-position="658">
+          <caret line="105" column="65" selection-start-line="105" selection-start-column="65" selection-end-line="105" selection-end-column="65" />
           <folding>
             <element signature="e#0#35#0" expanded="true" />
           </folding>

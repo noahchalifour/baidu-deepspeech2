@@ -72,43 +72,51 @@ if __name__ == '__main__':
 
     print('Training...')
 
-    while epoch:
+    try:
 
-        current_epoch = hparams.n_epochs - epoch
+        while epoch:
 
-        for i in range(int(len(x_train)/batch_size)):
+            current_epoch = hparams.n_epochs - epoch
 
-            batch_train_x = np.asarray(x_train[i*batch_size:(i+1)*batch_size], dtype=np.float32)
-            batch_train_y = utils.sparse_tuple_from(np.asarray(y_train[i * batch_size:(i + 1) * batch_size]))
+            for i in range(int(len(x_train)/batch_size)):
 
-            cost, _, summary = model.train(batch_train_x, batch_train_y, sess)
+                batch_train_x = np.asarray(x_train[i*batch_size:(i+1)*batch_size], dtype=np.float32)
+                batch_train_y = utils.sparse_tuple_from(np.asarray(y_train[i * batch_size:(i + 1) * batch_size]))
 
-            global_step += batch_size
+                cost, _, summary = model.train(batch_train_x, batch_train_y, sess)
 
-            train_writer.add_summary(summary, global_step=global_step)
+                global_step += batch_size
 
-            print('epoch: {}, global_step: {}, cost: {}, time: {}'.format(current_epoch, global_step, cost, time.time() - start_time))
+                train_writer.add_summary(summary, global_step=global_step)
 
-            # if global_step % steps_per_checkpoint == 0:
-            #
-            #     print('checkpointing... (global step = {})'.format(global_step))
-            #
-            #     checkpoint_path = train_model.saver.save(train_sess, checkpoints_path, global_step=global_step)
-            #     eval_model.saver.restore(eval_sess, checkpoint_path)
-            #     infer_model.saver.restore(infer_sess, checkpoint_path)
-            #
-            #     ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
-            #
-            #     eval_writer.add_summary(summary, global_step=global_step)
-            #
-            #     print('Eval --- LER: {} %'.format(ler*100))
-            #
-            #     decoded_ids = infer_model.infer([batch_train_x[0]], infer_sess)[0][0].values
-            #
-            #     original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
-            #     decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
-            #
-            #     print('GROUND TRUTH: {}'.format(original_text))
-            #     print('PREDICTION: {}'.format(decoded_text))
+                print('epoch: {}, global_step: {}, cost: {}, time: {}'.format(current_epoch, global_step, cost, time.time() - start_time))
 
-        if epoch > 0: epoch -= 1
+                # if global_step % steps_per_checkpoint == 0:
+                #
+                #     print('checkpointing... (global step = {})'.format(global_step))
+                #
+                #     checkpoint_path = train_model.saver.save(train_sess, checkpoints_path, global_step=global_step)
+                #     eval_model.saver.restore(eval_sess, checkpoint_path)
+                #     infer_model.saver.restore(infer_sess, checkpoint_path)
+                #
+                #     ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
+                #
+                #     eval_writer.add_summary(summary, global_step=global_step)
+                #
+                #     print('Eval --- LER: {} %'.format(ler*100))
+                #
+                #     decoded_ids = infer_model.infer([batch_train_x[0]], infer_sess)[0][0].values
+                #
+                #     original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
+                #     decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
+                #
+                #     print('GROUND TRUTH: {}'.format(original_text))
+                #     print('PREDICTION: {}'.format(decoded_text))
+
+            if epoch > 0: epoch -= 1
+
+    except KeyboardInterrupt:
+
+        sess.close()
+
+    sess.close()
