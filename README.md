@@ -7,6 +7,7 @@ This is a python implementation of Baidu's Deep Speech 2 paper https://arxiv.org
 # TODO:
 
 <ul>
+  <li>Fix GPU memory</li>
   <li>Add batch normalization to RNN</li>
   <li>Implement row convolution layer</li>
   <li>Add other dataset support</li>
