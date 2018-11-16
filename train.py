@@ -1,4 +1,4 @@
-from model import Model
+from model import Model, ModelModes
 from config import hparams
 import utils
 
@@ -8,9 +8,10 @@ import os
 import time
 import shutil
 import threading
+import numpy as np
 import tensorflow as tf
 tf.reset_default_graph()
-import numpy as np
+
 
 if __name__ == '__main__':
 
@@ -25,7 +26,8 @@ if __name__ == '__main__':
     tb_thread.daemon = True
     tb_thread.start()
 
-    graph = tf.Graph()
+    train_graph = tf.Graph()
+    eval_graph = tf.Graph()
 
     print('Loading data...')
 
@@ -43,22 +45,32 @@ if __name__ == '__main__':
 
     print('Initializing model...')
 
-    with graph.as_default():
+    device = '/cpu:0'
+    if hparams.use_gpu:
+        device = '/gpu:0'
 
-        model = Model(hparams)
-        variables_initializer = tf.global_variables_initializer()
+    with train_graph.as_default():
+        with tf.device(device):
+            train_model = Model(hparams, ModelModes.TRAIN)
+            variables_initializer = tf.global_variables_initializer()
 
-    train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=graph)
-    eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=graph)
+    with eval_graph.as_default():
+        with tf.device(device):
+            eval_model = Model(hparams, ModelModes.EVAL)
+
+    train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=train_graph)
+    eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=eval_graph)
 
     config = tf.ConfigProto()
     config.log_device_placement = hparams.log_device_placement
     config.allow_soft_placement = hparams.allow_soft_placement
 
-    sess = tf.Session(graph=graph,
-                      config=config)
+    train_sess = tf.Session(graph=train_graph,
+                            config=config)
+    eval_sess = tf.Session(graph=eval_graph,
+                           config=config)
 
-    sess.run(variables_initializer)
+    train_sess.run(variables_initializer)
 
     epoch = hparams.n_epochs
     batch_size = hparams.batch_size
@@ -72,7 +84,7 @@ if __name__ == '__main__':
 
     checkpoints_path = os.path.join(checkpoints_path, 'checkpoint')
 
-    model.save('model', sess, global_step=0)
+    train_model.save('model', train_sess, global_step=0)
 
     print('Training...')
 
@@ -87,7 +99,7 @@ if __name__ == '__main__':
                 batch_train_x = np.asarray(x_train[i*batch_size:(i+1)*batch_size], dtype=np.float32)
                 batch_train_y = utils.sparse_tuple_from(np.asarray(y_train[i * batch_size:(i + 1) * batch_size]))
 
-                cost, _, summary = model.train(batch_train_x, batch_train_y, sess)
+                cost, _, summary = train_model.train(batch_train_x, batch_train_y, train_sess)
 
                 global_step += batch_size
 
@@ -99,26 +111,21 @@ if __name__ == '__main__':
 
                     print('checkpointing... (global step = {})'.format(global_step))
 
-                    checkpoint_path = model.saver.save(sess, checkpoints_path, global_step=global_step)
+                    checkpoint_path = train_model.saver.save(train_sess, checkpoints_path, global_step=global_step)
+                    eval_model.saver.restore(eval_sess, checkpoint_path)
 
-                    ler, summary = model.eval(batch_train_x, batch_train_y, sess)
+                    ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
 
                     eval_writer.add_summary(summary, global_step=global_step)
 
                     print('Eval --- LER: {} %'.format(ler*100))
 
-                    decoded_ids = model.infer([batch_train_x[0]], sess)[0][0].values
-
-                    original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
-                    decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
-
-                    print('GROUND TRUTH: {}'.format(original_text))
-                    print('PREDICTION: {}'.format(decoded_text))
-
             if epoch > 0: epoch -= 1
 
     except KeyboardInterrupt:
 
-        sess.close()
+        train_sess.close()
+        eval_sess.close()
 
-    sess.close()
+    train_sess.close()
+    eval_sess.close()

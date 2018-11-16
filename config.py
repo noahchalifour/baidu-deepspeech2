@@ -12,6 +12,7 @@ hparams = HParams(
     logdir = 'logs',
 
     # GPU support
+    use_gpu = False,
     log_device_placement = True,
     allow_soft_placement = True,
 
