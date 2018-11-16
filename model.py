@@ -4,7 +4,10 @@ import pickle
 
 from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
+import memory_saving_gradients
+
 tf.reset_default_graph()
+tf.__dict__['gradients'] = memory_saving_gradients.gradients_memory
 
 
 class ModelModes:

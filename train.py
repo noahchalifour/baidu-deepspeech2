@@ -10,6 +10,7 @@ import shutil
 import threading
 import numpy as np
 import tensorflow as tf
+
 tf.reset_default_graph()
 
 
