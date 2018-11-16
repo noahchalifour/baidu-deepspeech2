@@ -1,4 +1,4 @@
-from model import Model, ModelModes
+from model import Model
 from config import hparams
 import utils
 
@@ -25,9 +25,7 @@ if __name__ == '__main__':
     tb_thread.daemon = True
     tb_thread.start()
 
-    train_graph = tf.Graph()
-    eval_graph = tf.Graph()
-    infer_graph = tf.Graph()
+    graph = tf.Graph()
 
     print('Loading data...')
 
@@ -45,34 +43,22 @@ if __name__ == '__main__':
 
     print('Initializing model...')
 
-    with train_graph.as_default():
+    with graph.as_default():
 
-        train_model = Model(hparams, ModelModes.TRAIN)
+        model = Model(hparams)
         variables_initializer = tf.global_variables_initializer()
 
-    with eval_graph.as_default():
-
-        eval_model = Model(hparams, ModelModes.EVAL)
-
-    with infer_graph.as_default():
-
-        infer_model = Model(hparams, ModelModes.INFER)
-
-    train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=train_graph)
-    eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=eval_graph)
+    train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=graph)
+    eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=graph)
 
     config = tf.ConfigProto()
     config.log_device_placement = hparams.log_device_placement
     config.allow_soft_placement = hparams.allow_soft_placement
 
-    train_sess = tf.Session(graph=train_graph,
-                            config=config)
-    eval_sess = tf.Session(graph=eval_graph,
-                           config=config)
-    infer_sess = tf.Session(graph=infer_graph,
-                            config=config)
+    sess = tf.Session(graph=graph,
+                      config=config)
 
-    train_sess.run(variables_initializer)
+    sess.run(variables_initializer)
 
     epoch = hparams.n_epochs
     batch_size = hparams.batch_size
@@ -86,7 +72,7 @@ if __name__ == '__main__':
 
     checkpoints_path = os.path.join(checkpoints_path, 'checkpoint')
 
-    train_model.save('model', train_sess, global_step=0)
+    model.save('model', sess, global_step=0)
 
     print('Training...')
 
@@ -101,7 +87,7 @@ if __name__ == '__main__':
                 batch_train_x = np.asarray(x_train[i*batch_size:(i+1)*batch_size], dtype=np.float32)
                 batch_train_y = utils.sparse_tuple_from(np.asarray(y_train[i * batch_size:(i + 1) * batch_size]))
 
-                cost, _, summary = train_model.train(batch_train_x, batch_train_y, train_sess)
+                cost, _, summary = model.train(batch_train_x, batch_train_y, sess)
 
                 global_step += batch_size
 
@@ -113,17 +99,15 @@ if __name__ == '__main__':
 
                     print('checkpointing... (global step = {})'.format(global_step))
 
-                    checkpoint_path = train_model.saver.save(train_sess, checkpoints_path, global_step=global_step)
-                    eval_model.saver.restore(eval_sess, checkpoint_path)
-                    infer_model.saver.restore(infer_sess, checkpoint_path)
+                    checkpoint_path = model.saver.save(sess, checkpoints_path, global_step=global_step)
 
-                    ler, summary = eval_model.eval(batch_train_x, batch_train_y, eval_sess)
+                    ler, summary = model.eval(batch_train_x, batch_train_y, sess)
 
                     eval_writer.add_summary(summary, global_step=global_step)
 
                     print('Eval --- LER: {} %'.format(ler*100))
 
-                    decoded_ids = infer_model.infer([batch_train_x[0]], infer_sess)[0][0].values
+                    decoded_ids = model.infer([batch_train_x[0]], sess)[0][0].values
 
                     original_text = utils.ids_to_text(y_train[i*batch_size], output_mapping)
                     decoded_text = utils.ids_to_text(decoded_ids, output_mapping)
@@ -135,10 +119,6 @@ if __name__ == '__main__':
 
     except KeyboardInterrupt:
 
-        train_sess.close()
-        eval_sess.close()
-        infer_sess.close()
+        sess.close()
 
-    train_sess.close()
-    eval_sess.close()
-    infer_sess.close()
+    sess.close()

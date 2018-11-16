@@ -7,20 +7,11 @@ import tensorflow as tf
 tf.reset_default_graph()
 
 
-class ModelModes:
-
-    TRAIN = 0
-    EVAL = 1
-    INFER = 2
-    STREAMING_INFER = 3
-
-
 class Model(object):
 
-    def __init__(self, config, mode):
+    def __init__(self, config):
 
         self.config = config
-        self.mode = mode
 
         with tf.device('/cpu:0'):
 
@@ -33,8 +24,6 @@ class Model(object):
             sequence_lengths = utils.compute_seq_lengths(self.inputs)
 
             batch_size = self.config.batch_size
-            if mode == ModelModes.INFER or mode == ModelModes.STREAMING_INFER:
-                batch_size = 1
 
             self.conv_weights = {}
             self.conv_biases = {}
@@ -79,21 +68,16 @@ class Model(object):
                 self.fw_rnn_state = self.fw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
                 if self.config.bidirectional_rnn:
                     self.bw_rnn_state = self.bw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
+                else:
+                    self.initial_rnn_state = self.fw_rnn_state
 
                 if self.config.bidirectional_rnn:
-                    rnn_outputs, state = tf.nn.bidirectional_dynamic_rnn(self.fw_rnn_cell, self.bw_rnn_cell, conv_output,
+                    rnn_outputs, self.rnn_state = tf.nn.bidirectional_dynamic_rnn(self.fw_rnn_cell, self.bw_rnn_cell, conv_output,
                                                                          sequence_lengths, initial_state_fw=self.fw_rnn_state,
                                                                          initial_state_bw=self.bw_rnn_state, dtype=tf.float32)
                 else:
-                    rnn_outputs, state = tf.nn.dynamic_rnn(self.fw_rnn_cell, conv_output,
+                    rnn_outputs, self.rnn_state = tf.nn.dynamic_rnn(self.fw_rnn_cell, conv_output,
                                                            sequence_lengths, initial_state=self.fw_rnn_state, dtype=tf.float32)
-
-            if mode == ModelModes.STREAMING_INFER:
-                if self.config.bidirectional_rnn:
-                    self.fw_rnn_state = state[0]
-                    self.bw_rnn_state = state[1]
-                else:
-                    self.fw_rnn_state = state
 
             outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
 
@@ -132,51 +116,44 @@ class Model(object):
 
         with tf.device('/gpu:0'):
 
-            if mode == ModelModes.TRAIN:
+            loss = tf.nn.ctc_loss(self.labels, logits, sequence_lengths)
+            self.cost = tf.reduce_mean(loss)
 
-                loss = tf.nn.ctc_loss(self.labels, logits, sequence_lengths)
-                self.cost = tf.reduce_mean(loss)
+            cost_summary = tf.summary.scalar('cost', self.cost)
+            self.summary = tf.summary.merge([cost_summary])
 
-                cost_summary = tf.summary.scalar('cost', self.cost)
-                self.summary = tf.summary.merge([cost_summary])
-
-                if self.config.optimizer == 'sgd':
-                    self.optimizer = tf.train.GradientDescentOptimizer(
-                        learning_rate=self.config.learning_rate).minimize(self.cost)
-                elif self.config.optimizer == 'adam':
-                    self.optimizer = tf.train.AdamOptimizer(
-                        learning_rate=self.config.learning_rate).minimize(self.cost)
-                else:
-                    raise Exception('Invalid optimizer: {}'.format(self.config.optimizer))
-
+            if self.config.optimizer == 'sgd':
+                self.optimizer = tf.train.GradientDescentOptimizer(
+                    learning_rate=self.config.learning_rate).minimize(self.cost)
+            elif self.config.optimizer == 'adam':
+                self.optimizer = tf.train.AdamOptimizer(
+                    learning_rate=self.config.learning_rate).minimize(self.cost)
             else:
+                raise Exception('Invalid optimizer: {}'.format(self.config.optimizer))
 
-                if self.config.beam_width > 0:
-                    self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, sequence_lengths, beam_width=self.config.beam_width)
-                else:
-                    self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
+            if self.config.beam_width > 0:
+                self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, sequence_lengths, beam_width=self.config.beam_width)
+            else:
+                self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
 
-                if self.mode == ModelModes.EVAL:
-                    self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
-                    ler_summary = tf.summary.scalar('label error rate', self.ler)
-                    self.summary = tf.summary.merge([ler_summary])
+            self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
+            ler_summary = tf.summary.scalar('label error rate', self.ler)
+            self.summary = tf.summary.merge([ler_summary])
 
         self.saver = tf.train.Saver()
 
     @classmethod
-    def load(cls, params_filepath, checkpoint_filepath, mode, sess):
+    def load(cls, params_filepath, checkpoint_filepath, sess):
 
         with open(params_filepath, 'rb') as f:
             hparams = pickle.load(f)
 
-        obj = cls(hparams, mode)
+        obj = cls(hparams)
         obj.saver.restore(sess, checkpoint_filepath)
 
         return obj
 
     def train(self, inputs, targets, sess):
-
-        assert self.mode == ModelModes.TRAIN
 
         return sess.run([self.cost, self.optimizer, self.summary], feed_dict={
             self.inputs: inputs,
@@ -185,16 +162,33 @@ class Model(object):
 
     def eval(self, inputs, targets, sess):
 
-        assert self.mode == ModelModes.EVAL
-
         return sess.run([self.ler, self.summary], feed_dict={
             self.inputs: inputs,
             self.labels: targets
         })
 
-    def infer(self, inputs, sess):
+    def start_stream(self, sess):
 
-        assert self.mode == ModelModes.INFER or self.mode == ModelModes.STREAMING_INFER
+        assert not self.config.bidirectional_rnn
+
+        self.initial_rnn_state = self.fw_rnn_state
+        sess.run([self.initial_rnn_state])
+
+    def streaming_infer(self, inputs, sess):
+
+        decoded, rnn_state = sess.run([self.decoded, self.rnn_state], feed_dict={
+            self.inputs: inputs
+        })
+
+        self.fw_rnn_state = rnn_state
+        return decoded
+
+    def end_stream(self, sess):
+
+        self.fw_rnn_state = self.initial_rnn_state
+        sess.run([self.fw_rnn_state])
+
+    def infer(self, inputs, sess):
 
         return sess.run([self.decoded], feed_dict={
             self.inputs: inputs,
