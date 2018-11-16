@@ -10,7 +10,10 @@ hparams = HParams(
     max_data = 10,
     optimizer = 'sgd',
     logdir = 'logs',
+
+    # GPU support
     log_device_placement = True,
+    allow_soft_placement = True,
 
     # CNN
     num_conv_layers = 1,    # Best: 3

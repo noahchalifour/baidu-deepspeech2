@@ -61,10 +61,16 @@ if __name__ == '__main__':
     train_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'train'), graph=train_graph)
     eval_writer = tf.summary.FileWriter(os.path.join(hparams.logdir, 'eval'), graph=eval_graph)
 
+    config = tf.ConfigProto()
+    config.log_device_placement = hparams.log_device_placement
+    config.allow_soft_placement = hparams.allow_soft_placement
+
     train_sess = tf.Session(graph=train_graph,
-                            config=tf.ConfigProto(log_device_placement=hparams.log_device_placement))
-    eval_sess = tf.Session(graph=eval_graph)
-    infer_sess = tf.Session(graph=infer_graph)
+                            config=config)
+    eval_sess = tf.Session(graph=eval_graph,
+                           config=config)
+    infer_sess = tf.Session(graph=infer_graph,
+                            config=config)
 
     train_sess.run(variables_initializer)
 
