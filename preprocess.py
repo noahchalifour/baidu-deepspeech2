@@ -1,73 +1,71 @@
-from pydub import AudioSegment
+from config import preprocessing as conf_preprocess
+import utils
+
 from scipy import signal
-from sklearn import preprocessing
+from tqdm import tqdm
 import os
 import argparse
+import time
+import csv
+import soundfile as sf
 import numpy as np
 
 
-def log_mel_spectrogram():
-
-    # TODO: Implement
-
-    pass
-
-
-def log_linear_specgram(audio, sample_rate, window_size=10,
+def log_linear_specgram(audio, sample_rate, window_size=20,
                         step_size=10, eps=1e-10):
 
     nperseg = int(round(window_size * sample_rate / 1e3))
     noverlap = int(round(step_size * sample_rate / 1e3))
+
     _, _, spec = signal.spectrogram(audio, fs=sample_rate,
                                     window='hann', nperseg=nperseg, noverlap=noverlap,
                                     detrend=False)
+
     return np.log(spec.T.astype(np.float32) + eps)
 
 
-def preprocess_audio(audio, frame_rate):
+def preprocess_librispeech(directory):
 
-    # TODO: Normalize audio
-    # TODO: Maybe convert data to mono?
+    # TODO: Maybe normalize data
 
-    arr_data = np.fromstring(audio, dtype=np.int16)
+    print("Pre-processing LibriSpeech corpus")
 
-    features = log_linear_specgram(arr_data, frame_rate, window_size=20, step_size=10)
-    features = np.asarray([preprocessing.scale(spec_bin.astype(float)) for spec_bin in features])
+    start_time = time.time()
 
-    return features
+    character_mapping = utils.create_character_mapping()
 
+    if not os.path.exists(conf_preprocess['data_dir']):
+        os.makedirs(conf_preprocess['data_dir'])
 
-def preprocess_librispeech(master_directory):
+    dir_walk = list(os.walk(directory))
+    num_hours = 0
 
-    output_space = {'<null>': 0}
+    with open(os.path.join(conf_preprocess['data_dir'], 'metadata.csv'), 'w', newline='') as metadata:
+        metadata_writer = csv.DictWriter(metadata, fieldnames=['filename', 'spec_length', 'labels_length', 'labels'])
+        metadata_writer.writeheader()
+        for root, dirs, files in tqdm(dir_walk):
+            for file in files:
+                if file[-4:] == '.txt':
+                    with open(os.path.join(root, file), 'r') as f:
+                        for line in f.readlines():
+                            sections = line.split(' ')
+                            audio, sr = sf.read(os.path.join(root, sections[0] + '.flac'))
+                            num_hours += (len(audio) / sr) / 3600
+                            spec = log_linear_specgram(audio, sr, window_size=conf_preprocess['window_size'],
+                                                       step_size=conf_preprocess['step_size'])
+                            np.save(os.path.join(conf_preprocess['data_dir'], sections[0] + '.npy'), spec)
+                            ids = [character_mapping[c] for c in ' '.join(sections[1:]).lower()
+                                   if c in character_mapping]
+                            metadata_writer.writerow({
+                                'filename': sections[0],
+                                'spec_length': spec.shape[0],
+                                'labels_length': len(ids),
+                                'labels': ' '.join([str(i) for i in ids])
+                            })
 
-    if not os.path.exists('data'):
-        os.makedirs('data')
-
-    with open('data/transcriptions.txt', 'w') as transcriptions_f:
-
-        for root, dirs, files in os.walk(master_directory):
-            if files and root != master_directory:
-                for file in files:
-                    if file[-5:] == '.flac':
-                        audio = AudioSegment.from_file(os.path.join(root, file))
-                        pp_audio = preprocess_audio(audio.raw_data, audio.frame_rate)
-                        np.save('data/' + file[:-5] + '.npy', pp_audio)
-                    elif file[-4:] == '.txt':
-                        with open(os.path.join(root, file), 'r') as f:
-                            for line in f.readlines():
-                                audio_file_id = line.split(' ')[0]
-                                transcription = ' '.join(line.split(' ')[1:]).strip('\n').lower()
-                                id_transcription = ""
-                                for c in transcription:
-                                    if c not in output_space.keys():
-                                        output_space[c] = len(output_space.keys())
-                                    id_transcription += str(output_space[c]) + " "
-                                transcriptions_f.write(audio_file_id + ' - ' + id_transcription.strip() + '\n')
-
-    with open('data/output_space.txt', 'w') as f:
-        for k, v in output_space.items():
-            f.write(k + ' --> ' + str(v) + '\n')
+    print("Done!")
+    print("Hours pre-processed: " + str(num_hours))
+    print("Time: " + str(time.time() - start_time))
 
 
 if __name__ == '__main__':
@@ -81,4 +79,4 @@ if __name__ == '__main__':
     if args.dataset == 'librispeech':
         preprocess_librispeech(args.data_dir)
     else:
-        raise Exception(f"Invalid dataset \"{args.dataset}\" must be (librispeech)")
+        raise Exception("Invalid dataset \"{}\" must be (librispeech)".format(args.dataset))

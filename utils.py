@@ -1,129 +1,61 @@
 import os
-import random
+import csv
 import numpy as np
 import tensorflow as tf
 
 
-def words_to_text(words):
+def create_character_mapping():
 
-    return ''.join(words)
+    character_map = {' ': 0}
 
+    for i in range(97, 123):
+        character_map[chr(i)] = len(character_map)
 
-def compute_seq_lengths(seq):
-
-    used = tf.sign(tf.reduce_max(tf.abs(seq), reduction_indices=2))
-    length = tf.reduce_sum(used, reduction_indices=1)
-    length = tf.cast(length, tf.int32)
-    return length
+    return character_map
 
 
-def ids_to_text(ids, mapping):
+def get_data_details(filename):
 
-    words = [mapping[x] for x in ids]
-    return words_to_text(words)
+    result = {
+        'max_input_length': 0,
+        'max_label_length': 0,
+        'num_samples': 0
+    }
 
+    # Get max lengths
+    with open(filename, 'r') as metadata:
+        metadata_reader = csv.DictReader(metadata, fieldnames=['filename', 'spec_length', 'labels_length', 'labels'])
+        next(metadata_reader)
+        for row in metadata_reader:
+            if int(row['spec_length']) > result['max_input_length']:
+                result['max_input_length'] = int(row['spec_length'])
+            if int(row['labels_length']) > result['max_label_length']:
+                result['max_label_length'] = int(row['labels_length'])
+            result['num_samples'] += 1
 
-def load_output_mapping(filename):
-
-    mapping = []
-
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-
-    for _ in range(len(lines)):
-        for line in lines:
-            sections = line.split(' --> ')
-            if int(sections[1].strip('\n')) == len(mapping):
-                mapping.append(sections[0])
-
-    return mapping
-
-
-def wer(r, h):
-
-    # initialisation
-    d = np.zeros((len(r)+1)*(len(h)+1), dtype=np.uint8)
-    d = d.reshape((len(r)+1, len(h)+1))
-    for i in range(len(r)+1):
-        for j in range(len(h)+1):
-            if i == 0:
-                d[0][j] = j
-            elif j == 0:
-                d[i][0] = i
-
-    # computation
-    for i in range(1, len(r)+1):
-        for j in range(1, len(h)+1):
-            if r[i-1] == h[j-1]:
-                d[i][j] = d[i-1][j-1]
-            else:
-                substitution = d[i-1][j-1] + 1
-                insertion = d[i][j-1] + 1
-                deletion = d[i-1][j] + 1
-                d[i][j] = min(substitution, insertion, deletion)
-
-    return d[len(r)][len(h)]
+    return result
 
 
-def sparse_tuple_from(sequences, dtype=np.int32):
+def create_data_generator(directory, max_input_length, max_label_length, batch_size=64):
 
-    indices = []
-    values = []
+    x, y, input_lengths, label_lengths = [], [], [], []
 
-    for n, seq in enumerate(sequences):
-        indices.extend(zip([n] * len(seq), range(len(seq))))
-        values.extend(seq)
-
-    indices = np.asarray(indices, dtype=np.int64)
-    values = np.asarray(values, dtype=dtype)
-    shape = np.asarray([len(sequences), np.asarray(indices).max(0)[1] + 1], dtype=np.int64)
-
-    return indices, values, shape
-
-
-def pad_sequences(sequences, length):
-
-    new_sequences = []
-
-    for seq in sequences:
-        pad = [np.zeros(161) for _ in range(length-len(seq))]
-        if len(pad) > 0:
-            new_sequences.append(np.concatenate((seq, pad), axis=0))
-        else:
-            new_sequences.append(seq)
-
-    return new_sequences
-
-
-def load_data(filepath, max_data, test_size=0.2):
-
-    all_data = []
-
-    with open(os.path.join(filepath, 'transcriptions.txt'), 'r') as f:
-        lines = f.readlines()
-        for file in os.listdir(filepath):
-            if max_data > 0 and len(all_data) >= max_data:
-                all_data = all_data[:max_data]
-                break
-            if file not in ['transcriptions.txt', 'output_space.txt', '.DS_Store']:
-                arr = np.load(os.path.join(filepath, file))
-                for line in lines:
-                    if line.split(' - ')[0] == file[:-4]:
-                        ids = [int(x) for x in line.split(' - ')[1].strip('\n').split(' ')]
-                        if len(arr) > len(ids):
-                            all_data.append((arr, ids))
-                        else:
-                            print("error loading transcription: \"{}\"".format(line))
-                        break
-
-    random.shuffle(all_data)
-
-    train_data = all_data[int(test_size * len(all_data)):]
-    test_data = all_data[:int(test_size * len(all_data))]
-
-    x_train = [x[0] for x in train_data]
-    y_train = [x[1] for x in train_data]
-    x_test = [x[0] for x in test_data]
-    y_test = [x[1] for x in test_data]
-
-    return x_train, y_train, x_test, y_test
+    with open(os.path.join(directory, 'metadata.csv'), 'r') as metadata:
+        metadata_reader = csv.DictReader(metadata, fieldnames=['filename', 'spec_length', 'labels_length', 'labels'])
+        next(metadata_reader)
+        for row in metadata_reader:
+            audio = np.load(os.path.join(directory, row['filename'] + '.npy'))
+            x.append(audio)
+            y.append([int(i) for i in row['labels'].split(' ')])
+            input_lengths.append(row['spec_length'])
+            label_lengths.append(row['labels_length'])
+            if len(x) == batch_size:
+                yield {
+                    'inputs': tf.keras.preprocessing.sequence.pad_sequences(x, maxlen=max_input_length, padding='post'),
+                    'labels': tf.keras.preprocessing.sequence.pad_sequences(y, maxlen=max_label_length, padding='post'),
+                    'input_lengths': np.asarray(input_lengths),
+                    'label_lengths': np.asarray(label_lengths)
+                }, {
+                    'ctc': np.zeros([batch_size])
+                }
+                x, y, input_lengths, label_lengths = [], [], [], []

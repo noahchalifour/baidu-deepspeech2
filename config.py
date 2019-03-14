@@ -1,34 +1,37 @@
-from tensorflow.contrib.training import HParams
+preprocessing = {
 
-hparams = HParams(
+    'data_dir': 'data',
+    'window_size': 20,
+    'step_size': 10,
 
-    batch_size = 2,
-    learning_rate = 0.001,
-    n_epochs = 30,
-    steps_per_checkpoint = 10,
-    checkpoints_path = 'model/checkpoints',
-    max_data = 10,
-    optimizer = 'sgd',
-    logdir = 'logs',
+}
 
-    # GPU support
-    use_gpu = False,
-    log_device_placement = True,
-    allow_soft_placement = True,
+model = {
 
-    # CNN
-    num_conv_layers = 1,    # Best: 3
+    'verbose': 1,
 
-    # RNN
-    rnn_type = 'gru',
-    rnn_layers = 3,         # Best: 7
-    rnn_size = 128,
-    bidirectional_rnn = False,
+    'conv_channels': [100],
+    'conv_filters': [5],
+    'conv_strides': [2],
 
-    # Row convolution
-    future_context = -1,
+    'rnn_units': [64],
+    'bidirectional_rnn': True,
 
-    # Decoder
-    beam_width = 32
+    'future_context': 2,
 
-)
+    'use_bn': True,
+
+    'learning_rate': 0.001
+
+}
+
+training = {
+
+    'tensorboard': False,
+    'log_dir': './logs',
+
+    'batch_size': 64,
+    'epochs': 5,
+    'validation_size': 0.2
+
+}

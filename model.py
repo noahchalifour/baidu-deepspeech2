@@ -1,198 +1,95 @@
-import utils
-import os
-import pickle
-
-from tensorflow.contrib.rnn import MultiRNNCell, BasicLSTMCell, GRUCell
 import tensorflow as tf
-import memory_saving_gradients
-
-tf.reset_default_graph()
-tf.__dict__['gradients'] = memory_saving_gradients.gradients_memory
 
 
-class ModelModes:
+def clipped_relu(x):
 
-    TRAIN = 1
-    EVAL = 2
-    INFER = 3
-    STREAMING_INFER = 4
+    return tf.keras.activations.relu(x, max_value=20)
 
 
-class Model(object):
+def ctc_lambda_func(args):
 
-    def __init__(self, config, mode):
+    y_pred, labels, input_length, label_length = args
 
-        self.config = config
-        self.mode = mode
+    return tf.keras.backend.ctc_batch_cost(labels, y_pred, input_length, label_length)
 
-        self.inputs = tf.placeholder(tf.float32,
-                                     shape=[None, None, self.config.n_features],
-                                     name='inputs')
-        self.labels = tf.sparse_placeholder(tf.int32,
-                                            name='labels')
 
-        sequence_lengths = utils.compute_seq_lengths(self.inputs)
+def ctc(y_true, y_pred):
 
-        batch_size = self.config.batch_size
-        if self.mode == ModelModes.INFER or self.mode == ModelModes.STREAMING_INFER:
-            batch_size = 1
+    return y_pred
 
-        self.conv_weights = {}
-        self.conv_biases = {}
 
-        # TODO: Add batch normalization to RNN
+class SpeechModel(object):
 
-        conv_output = tf.reshape(self.inputs, [batch_size, self.config.input_max_len, self.config.n_features, 1])
-        layer_output = 1
+    """
 
-        with tf.variable_scope("CNN"):
+    TODO: Implement 2D convolution
+    TODO: Add dropout
+    TODO: Add different optimizers
+    TODO: Test layer batch normalization (at every layer?)
 
-            for i in range(self.config.num_conv_layers):
+    """
 
-                self.conv_weights['W_conv' + str(i+1)] = tf.Variable(tf.random_normal([5, 5, layer_output, 32*(i+1)]), name=('W_conv' + str(i+1)))
-                self.conv_biases['b_conv' + str(i+1)] = tf.Variable(tf.random_normal([32*(i+1)]), name=('b_conv' + str(i+1)))
-                layer_output = 32 * (i + 1)
+    def __init__(self, hparams):
 
-                conv_output = tf.nn.conv2d(conv_output, self.conv_weights['W_conv' + str(i+1)], strides=[1, 1, 1, 1], padding='SAME')
-                conv_output = tf.layers.batch_normalization(conv_output)
+        input_data = tf.keras.layers.Input(name='inputs', shape=[hparams['max_input_length'], 161])
+        x = input_data
 
-        conv_output = tf.reshape(conv_output, [batch_size, self.config.input_max_len, -1])
+        if hparams['use_bn']:
+            x = tf.keras.layers.BatchNormalization()(x)
 
-        def rnn_cell():
+        x = tf.keras.layers.ZeroPadding1D(padding=(0, hparams['max_input_length']))(x)
+        for i in range(len(hparams['conv_channels'])):
+            x = tf.keras.layers.Conv1D(hparams['conv_channels'][i], hparams['conv_filters'][i],
+                                       strides=hparams['conv_strides'][i], activation='relu', padding='same')(x)
 
-            if self.config.rnn_type == 'lstm':
-                return BasicLSTMCell(self.config.rnn_size)
-            elif self.config.rnn_type == 'gru':
-                return GRUCell(self.config.rnn_size)
-            else:
-                raise Exception('Invalid rnn type: {} (Must be lstm or gru)'.format(self.config.rnn_type))
+        if hparams['use_bn']:
+            x = tf.keras.layers.BatchNormalization()(x)
 
-        with tf.variable_scope('RNN'):
-            if self.config.rnn_layers == 1:
-                self.fw_rnn_cell = rnn_cell()
-                if self.config.bidirectional_rnn:
-                    self.bw_rnn_cell = rnn_cell()
-            else:
-                self.fw_rnn_cell = MultiRNNCell([rnn_cell() for _ in range(self.config.rnn_layers)])
-                if self.config.bidirectional_rnn:
-                    self.bw_rnn_cell = MultiRNNCell([rnn_cell() for _ in range(self.config.rnn_layers)])
+        for h_units in hparams['rnn_units']:
+            if hparams['bidirectional_rnn']:
+                h_units = int(h_units / 2)
+            gru = tf.keras.layers.GRU(h_units, activation='relu', return_sequences=True)
+            if hparams['bidirectional_rnn']:
+                gru = tf.keras.layers.Bidirectional(gru, merge_mode='sum')
+            x = gru(x)
 
-            self.fw_rnn_state = self.fw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
-            if self.config.bidirectional_rnn:
-                self.bw_rnn_state = self.bw_rnn_cell.zero_state(batch_size, dtype=tf.float32)
+        if hparams['use_bn']:
+            x = tf.keras.layers.BatchNormalization()(x)
 
-            if self.config.bidirectional_rnn:
-                rnn_outputs, state = tf.nn.bidirectional_dynamic_rnn(self.fw_rnn_cell, self.bw_rnn_cell, conv_output,
-                                                                     sequence_lengths, initial_state_fw=self.fw_rnn_state,
-                                                                     initial_state_bw=self.bw_rnn_state, dtype=tf.float32)
-                if self.mode == ModelModes.STREAMING_INFER:
-                    self.update_rnn_state = [tf.assign(self.fw_rnn_state, state[0]), tf.assign(self.fw_rnn_state, state[1])]
-            else:
-                rnn_outputs, state = tf.nn.dynamic_rnn(self.fw_rnn_cell, conv_output,
-                                                       sequence_lengths, initial_state=self.fw_rnn_state, dtype=tf.float32)
-                if self.mode == ModelModes.STREAMING_INFER:
-                    self.update_rnn_state = [tf.assign(self.fw_rnn_state, state)]
+        if hparams['future_context'] > 0:
+            if hparams['future_context'] > 1:
+                x = tf.keras.layers.ZeroPadding1D(padding=(0, hparams['future_context'] - 1))(x)
+            x = tf.keras.layers.Conv1D(100, hparams['future_context'], activation='relu')(x)
 
-        outputs = tf.reshape(rnn_outputs, [-1, self.config.rnn_size])
+        y_pred = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(hparams['vocab_size'] + 1,
+                                                                       activation='sigmoid'))(x)
 
-        if (not self.config.bidirectional_rnn) and self.config.future_context > 0:
-            with tf.variable_scope("Lookahead"):
-                # TODO: Implement row convolution
-                pass
+        labels = tf.keras.layers.Input(name='labels', shape=[None], dtype='int32')
+        input_length = tf.keras.layers.Input(name='input_lengths', shape=[1], dtype='int32')
+        label_length = tf.keras.layers.Input(name='label_lengths', shape=[1], dtype='int32')
 
-        with tf.variable_scope("Fully_Connected"):
+        loss_out = tf.keras.layers.Lambda(ctc_lambda_func, output_shape=(1,), name='ctc')([y_pred,
+                                                                                           labels,
+                                                                                           input_length,
+                                                                                           label_length])
 
-            fc_W = tf.Variable(tf.truncated_normal([self.config.rnn_size, self.config.n_classes], stddev=0.1), name='W_fc')
-            fc_b = tf.Variable(tf.constant(0., shape=[self.config.n_classes]), name='b_fc')
+        self.model = tf.keras.Model(inputs=[input_data, labels, input_length, label_length], outputs=[loss_out])
 
-            logits = tf.matmul(outputs, fc_W) + fc_b
+        if hparams['verbose']:
+            print(self.model.summary())
 
-            logits = tf.reshape(logits, [batch_size, -1, self.config.n_classes])
-            logits = tf.transpose(logits, (1, 0, 2))
+        optimizer = tf.keras.optimizers.Adam(lr=hparams['learning_rate'], beta_1=0.9, beta_2=0.999,
+                                             epsilon=1e-8, clipnorm=5)
 
-        if self.mode == ModelModes.TRAIN:
+        self.model.compile(optimizer=optimizer, loss=ctc)
 
-            loss = tf.nn.ctc_loss(self.labels, logits, sequence_lengths)
-            self.cost = tf.reduce_mean(loss)
+    def train_generator(self, generator, train_params):
 
-            cost_summary = tf.summary.scalar('cost', self.cost)
-            self.summary = tf.summary.merge([cost_summary])
+        callbacks = []
 
-            if self.config.optimizer == 'sgd':
-                self.optimizer = tf.train.GradientDescentOptimizer(
-                    learning_rate=self.config.learning_rate).minimize(self.cost)
-            elif self.config.optimizer == 'adam':
-                self.optimizer = tf.train.AdamOptimizer(
-                    learning_rate=self.config.learning_rate).minimize(self.cost)
-            else:
-                raise Exception('Invalid optimizer: {}'.format(self.config.optimizer))
+        if train_params['tensorboard']:
+            callbacks.append(tf.keras.callbacks.TensorBoard(train_params['log_dir'], write_images=True))
 
-        else:
-
-            if self.config.beam_width > 0:
-                self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, sequence_lengths, beam_width=self.config.beam_width)
-            else:
-                self.decoded, _ = tf.nn.ctc_greedy_decoder(logits, sequence_lengths)
-
-            if self.mode == ModelModes.EVAL:
-                self.ler = tf.reduce_mean(tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.labels))
-                ler_summary = tf.summary.scalar('label error rate', self.ler)
-                self.summary = tf.summary.merge([ler_summary])
-
-        self.saver = tf.train.Saver()
-
-    @classmethod
-    def load(cls, params_filepath, checkpoint_filepath, sess, mode):
-
-        with open(params_filepath, 'rb') as f:
-            hparams = pickle.load(f)
-
-        obj = cls(hparams, mode)
-        obj.saver.restore(sess, checkpoint_filepath)
-
-        return obj
-
-    def train(self, inputs, targets, sess):
-
-        assert self.mode == ModelModes.TRAIN
-
-        return sess.run([self.cost, self.optimizer, self.summary], feed_dict={
-            self.inputs: inputs,
-            self.labels: targets
-        })
-
-    def eval(self, inputs, targets, sess):
-
-        assert self.mode == ModelModes.EVAL
-
-        return sess.run([self.ler, self.summary], feed_dict={
-            self.inputs: inputs,
-            self.labels: targets
-        })
-
-    def infer(self, inputs, sess):
-
-        assert self.mode == ModelModes.INFER or self.mode == ModelModes.STREAMING_INFER
-
-        ops = [self.decoded]
-        if self.mode == ModelModes.STREAMING_INFER:
-            ops += self.update_rnn_state
-
-        return sess.run(ops, feed_dict={
-            self.inputs: inputs,
-        })
-
-    def start_stream(self):
-
-        pass
-
-    def end_stream(self):
-
-        pass
-
-    def save(self, dir, sess, global_step=None):
-
-        with open(os.path.join(dir, 'hparams'), 'wb') as f:
-            pickle.dump(self.config, f)
-
-        self.saver.save(sess, os.path.join(dir, 'checkpoints', 'checkpoint'), global_step=global_step)
+        self.model.fit_generator(generator, epochs=train_params['epochs'],
+                                 steps_per_epoch=train_params['steps_per_epoch'],
+                                 callbacks=callbacks)
